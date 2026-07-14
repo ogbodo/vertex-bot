@@ -1,4 +1,4 @@
-"""Telegram reporting for Vertex-bot — pure transport plumbing (HTTP to the Bot API) plus
+"""Telegram reporting for Eshu Forex Trader — pure transport plumbing (HTTP to the Bot API) plus
 a report formatter. Fail-soft: a missing token or a network hiccup never breaks a run.
 Token + chat id come ONLY from the environment (.env via config.secrets), never hard-coded.
 """
@@ -26,12 +26,12 @@ def daily_report_text(as_of, equity, directive, diag, notionals, is_rebal):
     """Format the daily/rebalance status report (HTML). Honest framing — a risk/status
     report, never a 'trade signal'."""
     if directive == "FLATTEN":
-        return (f"🚨 <b>Vertex-bot — KILL-SWITCH</b>  ({as_of})\n"
+        return (f"🚨 <b>Eshu Forex Trader — KILL-SWITCH</b>  ({as_of})\n"
                 f"Drawdown breached the −20% floor → <b>flattening the book to cash</b>.\n"
                 f"Equity: <b>${equity:,.0f}</b>\n"
                 f"<i>Systematic CTA · robustness-first · will re-enter after a cooldown.</i>")
 
-    header = "🔄 <b>Vertex-bot — MONTHLY REBALANCE</b>" if is_rebal else "🤖 <b>Vertex-bot — daily</b>"
+    header = "🔄 <b>Eshu Forex Trader — MONTHLY REBALANCE</b>" if is_rebal else "🤖 <b>Eshu Forex Trader — daily</b>"
     gross = sum(abs(v) for v in notionals.values())
     lines = [f"{header}  ({as_of})",
              f"Equity: <b>${equity:,.0f}</b>",

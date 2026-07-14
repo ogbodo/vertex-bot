@@ -20,7 +20,7 @@ def main():
         print("No TELEGRAM_TOKEN / TELEGRAM_CHAT_ID in .env — add them first (see .env.example).")
         return
     ok = notify.send_message(token, chat,
-                             "✅ <b>Vertex-bot</b> Telegram is connected. Reports will arrive here.")
+                             "✅ <b>Eshu Forex Trader</b> Telegram is connected. Reports will arrive here.")
     print("sent ✓" if ok else "send FAILED — check the token/chat id (and that you've messaged the bot once).")
 
 

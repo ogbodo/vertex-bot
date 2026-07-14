@@ -91,6 +91,6 @@ broker_symbols:
 execution:
   # PLACEHOLDER — self-contained v2 folder so the daily run is harmless before the broker
   # is live. Point this at the IC Markets MT5 "MQL5/Files" folder once the demo is set up.
-  queue_dir: "/Users/izuchukwuogbodo/Desktop/vertex-bot/data/queue"
+  queue_dir: "/Users/izuchukwuogbodo/Desktop/Eshu_Forex_Trader/data/queue"
   demo_balance_fallback: 10000
   magic: 8800333        # isolated from v1 (8800111/8800222) — v2 can never touch v1 positions
