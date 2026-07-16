@@ -3,40 +3,36 @@
 
 magic: 8800333
 
-# Multi-asset universe (NOT crypto-only): majority global equity indices + FX + small crypto bloc.
-# proxy = yfinance daily symbol used for signals/backtest; exness = live CFD symbol; bloc = risk bloc.
+# ── GOLD-ONLY pivot ("one blade, full radar") ─────────────────────────────────
+# TRADE universe = gold alone. But a gold bot that only SEES gold is blind to the
+# global risk-off cascades that hurt it most — so the multi-asset panel below
+# (`context:`) is kept as a RADAR: it feeds the regime/stress layer only and is
+# NEVER traded. Signals+sizing on gold; awareness from the whole market.
 universe:
-  indices:
-    - {proxy: "^GSPC",     exness: "US500m",   region: "US"}
-    - {proxy: "^NDX",      exness: "USTECm",   region: "US"}
-    - {proxy: "^GDAXI",    exness: "DE30m",    region: "EU"}
-    - {proxy: "^FTSE",     exness: "UK100m",   region: "EU"}
-    - {proxy: "^FCHI",     exness: "FR40m",    region: "EU"}
-    - {proxy: "^STOXX50E", exness: "STOXX50m", region: "EU"}
-    - {proxy: "^N225",     exness: "JP225m",   region: "APAC"}
-    - {proxy: "^HSI",      exness: "HK50m",    region: "APAC"}
-    - {proxy: "^AXJO",     exness: "AUS200m",  region: "APAC"}
-    - {proxy: "^NSEI",     exness: "IN50m",    region: "APAC"}
-  # Government bonds — the key diversifier missing on Exness, available as CFDs on IC Markets
-  # (US 10Y, Bund, Gilt, JGB, BTP). Backtested via US-Treasury ETF proxies; live symbols to be
-  # confirmed from the IC Markets Market Watch during the broker migration.
-  bonds:
-    - {proxy: "IEF",       broker: "US10Y",   note: "US 7-10Y Treasury"}
-    - {proxy: "TLT",       broker: "US30Y",   note: "US 20Y+ Treasury"}
-    - {proxy: "BWX",       broker: "INTLGOVT", note: "intl developed govt bonds (Bund/Gilt/JGB proxy)"}
-  fx:
-    - {proxy: "EURUSD=X",  exness: "EURUSDm"}
-    - {proxy: "GBPUSD=X",  exness: "GBPUSDm"}
-    - {proxy: "USDJPY=X",  exness: "USDJPYm"}
-    - {proxy: "AUDUSD=X",  exness: "AUDUSDm"}
-  commodities:   # traded as US-hours ETF CFDs on IC Markets; proxy = the ETF itself so backtest = reality
-    - {proxy: "GC=F",      broker: "XAUUSD",   note: "gold (native metal CFD)"}
-    - {proxy: "BNO",       broker: "BNO",      note: "Brent crude — US Brent Oil Fund ETF"}
-    - {proxy: "UNG",       broker: "UNG",      note: "natural gas ETF"}
-    - {proxy: "CORN",      broker: "CORN",     note: "corn ETF — agriculture diversifier"}
-  crypto:
-    - {proxy: "BTC-USD",   exness: "BTCUSDm",  bloc: "crypto"}
-    - {proxy: "ETH-USD",   exness: "ETHUSDm",  bloc: "crypto"}
+  commodities:
+    - {proxy: "GC=F", exness: "XAUUSDm", note: "gold — the single traded instrument"}
+
+# Radar-only instruments (regime/stress inputs; never traded, never sized).
+context:
+  - "^GSPC"
+  - "^NDX"
+  - "^GDAXI"
+  - "^FTSE"
+  - "^FCHI"
+  - "^STOXX50E"
+  - "^N225"
+  - "^HSI"
+  - "^AXJO"
+  - "^NSEI"
+  - "IEF"
+  - "TLT"
+  - "BWX"
+  - "EURUSD=X"
+  - "GBPUSD=X"
+  - "USDJPY=X"
+  - "AUDUSD=X"
+  - "BTC-USD"
+  - "ETH-USD"
 
 # Pre-registered risk parameters (robustness-first dial — see plan). NOT fitted.
 risk:
@@ -46,49 +42,36 @@ risk:
   crypto_bloc_cap: 0.15     # crypto bloc max share of portfolio risk
   corr_floor: 0.30          # never assume pairwise corr below this when forecasting vol
 
-# Sleeve risk budgets (fixed, pre-registered — NOT optimized weights).
+# Sleeve risk budgets (fixed, PRE-REGISTERED before the gold-only validation ran —
+# NOT optimized). xsect needs a cross-section to rank, so it's out for a single
+# instrument; fast_trend's weight is higher than the old 25% because with one asset
+# there is no cross-sectional diversification and shock-reactivity must carry more.
 sleeves:
-  slow_trend: 0.50
-  fast_trend: 0.25
-  xsect: 0.25
+  slow_trend: 0.60
+  fast_trend: 0.40
 
-rebalance_days: 21          # monthly rebalance cadence
+# WEEKLY cadence. Monthly was right for a 20-instrument diversified book, but the fast
+# sleeve runs 10-40d signals — holding them 21 days made "fast" stale by construction
+# (audit/design fix). Tested 21/10/5d at 2 and 6 bps: monotone improvement toward 5d,
+# robust to 3x cost. All six runs counted in the deflated-Sharpe trial tally.
+rebalance_days: 5
 
-# IC Markets live symbols (yfinance proxy -> broker ticker). BEST-GUESS placeholders —
-# CONFIRM every one against your IC Markets MT5 Market Watch before going live (names and
-# suffixes vary by account/region; some, e.g. India 50, may not exist). The rebalancer
-# skips any unmapped instrument and warns.
-broker: "IC Markets"
+# Broker: Exness. Only the traded instrument needs a mapping (context is never traded).
+#   • Standard / Standard-demo accounts: gold = "XAUUSDm" (0.01 lot = 1 oz ≈ $3k+ notional —
+#     too coarse for a ~$100 account; fine from a few $k).
+#   • Standard CENT account (the $100 route): gold = "XAUUSDc" — cent-account contracts are
+#     ~100× smaller (1 cent-lot = 1,000 units), so the minimum gold position is tens of
+#     dollars of exposure instead of thousands. The EA reads the live contract size, so
+#     switching accounts is JUST this symbol string (confirm the exact name in Market Watch).
+#   • Pair with Exness swap-free (Extended covers XAUUSD): zero overnight fees on gold —
+#     removes the biggest cost drag on a hold-weeks trend book (activity-based, can downgrade).
+broker: "Exness"
 broker_symbols:
-  # CONFIRMED from the IC Markets Market Watch dump (2026-07-15). Native index CFDs + gold
-  # metal + FX; bonds/energy/ag/crypto as US-hours ETF CFDs. Dow + copper dropped (no CFD).
-  "^GSPC": "SP500m"
-  "^NDX": "ND100m"
-  "^GDAXI": "GDAXIm"
-  "^FTSE": "UK100"
-  "^FCHI": "FCHI40"
-  "^STOXX50E": "STOX50"
-  "^N225": "NI225"
-  "^HSI": "HSI50"
-  "^AXJO": "AUS200"
-  "^NSEI": "INDA"
-  "IEF": "IEF"
-  "TLT": "TLT"
-  "BWX": "BWX"
-  "EURUSD=X": "EURUSD"
-  "GBPUSD=X": "GBPUSD"
-  "USDJPY=X": "USDJPY"
-  "AUDUSD=X": "AUDUSD"
-  "GC=F": "XAUUSD"
-  "BNO": "BNO"
-  "UNG": "UNG"
-  "CORN": "CORN"
-  "BTC-USD": "BTC"
-  "ETH-USD": "ETH"
+  "GC=F": "XAUUSDm"   # change to "XAUUSDc" on a Standard Cent account
 
 execution:
   # The MT5 terminal's MQL5/Files folder — where VertexPlacerV2 reads the .reb book + risk
   # directive. Shared with v1's files, but names (vxq_v2_*) and magic (8800333) are distinct.
   queue_dir: "/Users/izuchukwuogbodo/Library/Application Support/net.metaquotes.wine.metatrader5/drive_c/Program Files/MetaTrader 5/MQL5/Files"
-  demo_balance_fallback: 100000
+  demo_balance_fallback: 100   # the design target: a ~$100 (cent) account must operate
   magic: 8800333        # isolated from v1 (8800111/8800222) — v2 can never touch v1 positions

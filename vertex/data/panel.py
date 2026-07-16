@@ -15,14 +15,25 @@ from datetime import datetime, timezone
 
 
 def universe_proxies(cfg):
-    """Flat list of {proxy, exness, asset_class, bloc} in a stable order."""
+    """Flat list of {proxy, exness, asset_class, bloc} in a stable order.
+
+    Includes BOTH the trade universe (cfg['universe']) and the radar-only context
+    instruments (cfg['context'], asset_class='context') — the panel carries everything,
+    while portfolio construction trades only the non-context entries."""
     out = []
     u = cfg.get("universe", {})
     for grp, items in u.items():          # any groups present (indices/fx/commodities/crypto), in config order
         for item in (items or []):
             out.append({"proxy": item["proxy"], "exness": item.get("exness"),
                         "asset_class": grp, "bloc": item.get("bloc", grp)})
+    for proxy in cfg.get("context", []) or []:
+        out.append({"proxy": proxy, "exness": None, "asset_class": "context", "bloc": "context"})
     return out
+
+
+def trade_proxies(cfg):
+    """Only the TRADED instruments (context/radar entries excluded)."""
+    return [p for p in universe_proxies(cfg) if p["asset_class"] != "context"]
 
 
 def _panels_dir(cfg):
@@ -52,10 +63,18 @@ def build_panel(cfg, drop_forming=True):
     # forward-fill prices: market-holiday gaps carry the last close, and crypto weekend
     # moves fold into the next business day's close-to-close return. No lookahead — a
     # carried-forward past close is information already known.
+    #
+    # STALENESS META: the ffill deliberately masks per-column gaps, which would defeat any
+    # dead-feed detection downstream. So BEFORE filling we record each column's last REAL
+    # print in close.attrs["last_real"]; save_panel persists it and execution reads it to
+    # refuse phantom positions from a dead/delisted feed.
+    last_real = {c: (str(close[c].last_valid_index().date()) if close[c].last_valid_index() is not None else None)
+                 for c in close.columns}
     if len(close):
         import pandas as pd
         bidx = pd.bdate_range(close.index.min(), close.index.max())
         close = close.reindex(bidx).ffill()
+    close.attrs["last_real"] = last_real
 
     if drop_forming and len(close):
         today = datetime.now(timezone.utc).date()
@@ -64,14 +83,36 @@ def build_panel(cfg, drop_forming=True):
 
 
 def save_panel(cfg, close, version=None):
-    """Freeze the panel to data/panels/panel_<version>.csv and point LATEST at it."""
+    """Freeze the panel to data/panels/panel_<version>.csv (+ staleness meta) and point
+    LATEST at it."""
+    import json
     version = version or datetime.now(timezone.utc).strftime("%Y%m%d")
     d = _panels_dir(cfg)
     path = os.path.join(d, f"panel_{version}.csv")
     close.to_csv(path)
+    meta = close.attrs.get("last_real")
+    if meta:
+        with open(os.path.join(d, f"panel_{version}_meta.json"), "w") as f:
+            json.dump({"last_real": meta}, f)
     with open(os.path.join(d, "LATEST"), "w") as f:
         f.write(version)
     return path, version
+
+
+def load_meta(cfg, version="latest"):
+    """{proxy: 'YYYY-MM-DD' of last REAL (pre-ffill) print} for the frozen panel, or {}."""
+    import json
+    d = _panels_dir(cfg)
+    if version == "latest":
+        lp = os.path.join(d, "LATEST")
+        if not os.path.exists(lp):
+            return {}
+        version = open(lp).read().strip()
+    mp = os.path.join(d, f"panel_{version}_meta.json")
+    try:
+        return json.load(open(mp)).get("last_real", {})
+    except Exception:
+        return {}
 
 
 def load_panel(cfg, version="latest"):

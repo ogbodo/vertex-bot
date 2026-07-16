@@ -41,11 +41,12 @@ def main():
         close = panel.load_panel(cfg)
         src = f"stale (refresh failed: {e})"
 
-    # 2) compute + write the directive daily; the full book only on the rebalance window
-    is_rebal_day = datetime.now().day in (1, 2, 3)
-    equity = rebalance.account_equity(cfg)
+    # 2) compute + write the directive daily; the full book WEEKLY (Monday — matches the
+    #    validated 5-trading-day cadence; the directive still de-risks daily in between)
+    is_rebal_day = datetime.now().weekday() == 0
+    equity, login = rebalance.account_info(cfg)
     state = rebalance.load_state(cfg)
-    notionals, directive, new_state, diag = rebalance.compute(close, cfg, equity, state)
+    notionals, directive, new_state, diag = rebalance.compute(close, cfg, equity, state, login=login)
 
     qdir = (cfg.get("execution", {}) or {}).get("queue_dir")
     if is_rebal_day and qdir:

@@ -74,7 +74,10 @@ def main():
         d10 = (daily * k).dropna()
 
     print(f"\n{'='*74}\nVALIDATION — '{label}'   ({close.index[0].date()} -> {close.index[-1].date()})")
-    print(f"(returns/DD scaled to {int(VOL_TARGET*100)}% annual vol; Sharpe is scale-free)\n")
+    if names == ["stack"]:
+        print("(stack runs at its own risk-managed vol — returns/DD as produced; Sharpe is scale-free)\n")
+    else:
+        print(f"(returns/DD scaled to {int(VOL_TARGET*100)}% annual vol; Sharpe is scale-free)\n")
 
     cut = int(len(d10) * 0.70)
     is_, oos = d10.iloc[:cut], d10.iloc[cut:]

@@ -29,18 +29,26 @@ def _logistic(x):
 def market_stress(rets, vol_win=20, ref_win=504):
     """Daily stress score in [0,1] from (a) how extreme trailing market vol is vs its own
     2-year history, and (b) the average pairwise correlation across the book (crisis => →1).
-    Both use only trailing data."""
+    Both use only trailing data.
+
+    `rets` should be a BROAD market panel (the context radar) — it need not equal the
+    traded universe. A single-instrument book MUST still pass a multi-asset panel here,
+    otherwise the correlation read is undefined (audit finding: n=1 used to divide by zero
+    and silently disable the regime layer)."""
     port = rets.mean(axis=1)                                   # equal-weight market proxy
     vol = port.rolling(vol_win).std() * np.sqrt(TRADING_DAYS)
     volz = (vol - vol.rolling(ref_win).mean()) / vol.rolling(ref_win).std()
     stress_vol = _logistic(volz.clip(-4, 4))
 
     # average pairwise correlation proxy: for an equal-weight book,
-    # Var(port) = (avg_var / N) * (1 + (N-1) * avg_corr)  =>  solve for avg_corr
-    n = rets.shape[1]
+    # Var(port) = (avg_var / N) * (1 + (N-1) * avg_corr)  =>  solve for avg_corr.
+    # N is the PER-DAY count of live instruments (audit fix: was the static column count,
+    # which mis-scaled early history and broke entirely for tiny universes).
+    n = rets.notna().sum(axis=1).astype(float)
+    n = n.where(n >= 2)                                        # need >=2 names for a correlation
     port_var = port.rolling(vol_win).var()
     avg_var = rets.rolling(vol_win).var().mean(axis=1).replace(0.0, np.nan)
-    avg_corr = ((n * port_var / avg_var - 1.0) / (n - 1)).clip(0.0, 1.0)
+    avg_corr = ((n * port_var / avg_var - 1.0) / (n - 1.0)).clip(0.0, 1.0)
 
     return (0.6 * stress_vol + 0.4 * avg_corr).clip(0.0, 1.0).fillna(0.0)
 

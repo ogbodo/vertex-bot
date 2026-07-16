@@ -16,14 +16,21 @@ Two deliberate design choices, both from the research and the robustness objecti
 import numpy as np
 
 from vertex import sleeves
+from vertex.data.panel import trade_proxies
 
 
 def combine(close, cfg):
     """Net all configured sleeves at their risk budgets, then cap the crypto bloc.
-    Returns a DataFrame of net target positions (index=dates, cols=instruments)."""
+    Returns a DataFrame of net target positions (index=dates, cols=TRADED instruments).
+
+    `close` may carry radar-only context columns (used by the regime layer elsewhere);
+    sleeves see ONLY the trade universe, so context instruments can never be positioned."""
     budgets = cfg.get("sleeves", {}) or {}
     idx = [i["proxy"] for i in cfg.get("universe", {}).get("indices", [])]
     tot = sum(budgets.values()) or 1.0
+
+    trade_cols = [p["proxy"] for p in trade_proxies(cfg) if p["proxy"] in close.columns]
+    trade_close = close[trade_cols]
 
     sleeve_params = cfg.get("sleeve_params", {}) or {}   # optional per-sleeve overrides (for WF selection)
     combined = None
@@ -32,7 +39,7 @@ def combine(close, cfg):
         if name == "xsect":
             params["include"] = idx
         sl = sleeves.build(name, **params)
-        p = sl.raw_positions(close) * (float(b) / tot)
+        p = sl.raw_positions(trade_close) * (float(b) / tot)
         combined = p if combined is None else combined.add(p, fill_value=0.0)
 
     return cap_crypto_bloc(combined, cfg)

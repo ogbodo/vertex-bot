@@ -31,7 +31,7 @@ def daily_report_text(as_of, equity, directive, diag, notionals, is_rebal):
                 f"Equity: <b>${equity:,.0f}</b>\n"
                 f"<i>Systematic CTA · robustness-first · will re-enter after a cooldown.</i>")
 
-    header = "🔄 <b>Eshu Forex Trader — MONTHLY REBALANCE</b>" if is_rebal else "🤖 <b>Eshu Forex Trader — daily</b>"
+    header = "🔄 <b>Eshu Forex Trader — REBALANCE</b>" if is_rebal else "🤖 <b>Eshu Forex Trader — daily</b>"
     gross = sum(abs(v) for v in notionals.values())
     lines = [f"{header}  ({as_of})",
              f"Equity: <b>${equity:,.0f}</b>",

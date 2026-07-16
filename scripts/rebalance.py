@@ -20,13 +20,24 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry", action="store_true", help="print only; write nothing")
     ap.add_argument("--risk-only", action="store_true", help="write only the risk directive, not the .reb")
+    ap.add_argument("--equity", type=float, default=None, help="override equity (what-if sizing demos)")
+    ap.add_argument("--reset-state", action="store_true", help="wipe peak/kill state (e.g. after an account/balance change)")
     args = ap.parse_args()
 
     cfg = load_config()
+    if args.reset_state:
+        sp = rebalance._state_path(cfg)
+        if os.path.exists(sp):
+            os.remove(sp)
+        print("exec state reset (peak/kill cleared)")
     close = panel.load_panel(cfg)
-    equity = rebalance.account_equity(cfg)
+    equity, login = rebalance.account_info(cfg)
+    if args.equity is not None:
+        equity = args.equity
     state = rebalance.load_state(cfg)
-    notionals, directive, new_state, diag = rebalance.compute(close, cfg, equity, state)
+    notionals, directive, new_state, diag = rebalance.compute(close, cfg, equity, state, login=login)
+    if diag.get("stale_dropped"):
+        print(f"  ⚠ dead-feed guard dropped: {diag['stale_dropped']}")
 
     print(f"\nLIVE REBALANCE  (as of {close.index[-1].date()})  equity ${equity:,.0f}")
     print(f"  book realized vol {diag['realized_vol']*100:.1f}%  ->  vol-target x{diag['vt']:.2f}")

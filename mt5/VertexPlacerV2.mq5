@@ -33,6 +33,32 @@ string REB_PREFIX = "vxq_v2_rebalance_";
 
 CTrade trade;
 
+// per-symbol backoff after a failed order (closed market etc.) — audit fix: without this
+// the reconciler re-sends a failing order every poll, hammering closed sessions all night
+#define BACKOFF_SECS 900
+string   g_boSym[];
+datetime g_boAt[];
+// dry-run log throttle: log the full book only when the book or directive changes
+string g_lastLoggedReb = "";
+double g_lastLoggedGross = -999;
+bool   g_verboseCycle = false;
+
+bool InBackoff(string sym)
+{
+   for(int i = 0; i < ArraySize(g_boSym); i++)
+      if(g_boSym[i] == sym && (TimeCurrent() - g_boAt[i]) < BACKOFF_SECS) return(true);
+   return(false);
+}
+
+void NoteFail(string sym)
+{
+   for(int i = 0; i < ArraySize(g_boSym); i++)
+      if(g_boSym[i] == sym) { g_boAt[i] = TimeCurrent(); return; }
+   int n = ArraySize(g_boSym);
+   ArrayResize(g_boSym, n + 1); ArrayResize(g_boAt, n + 1);
+   g_boSym[n] = sym; g_boAt[n] = TimeCurrent();
+}
+
 int OnInit()
 {
    if(InpAllowedLogin > 0 && (long)AccountInfoInteger(ACCOUNT_LOGIN) != InpAllowedLogin)
@@ -146,6 +172,9 @@ void ReconcileToReb(double gross)
 {
    string fn = NewestReb();
    if(fn == "") return;
+   // log verbosely only when the book or the risk dial actually changed
+   g_verboseCycle = (fn != g_lastLoggedReb || MathAbs(gross - g_lastLoggedGross) > 0.005);
+   if(g_verboseCycle) { g_lastLoggedReb = fn; g_lastLoggedGross = gross; }
    int f = FileOpen(fn, FILE_READ|FILE_TXT|FILE_ANSI);
    if(f == INVALID_HANDLE) return;
 
@@ -182,13 +211,23 @@ void ReconcileSymbol(string sym, double notional)
       return;                                      // already within band and same side -> leave it
 
    if(InpRebalanceDryRun)
-   { PrintFormat("REBAL(DRY) %s: cur %.2f -> target %.2f lots (notional %.0f)", sym, cur, target, notional); return; }
+   {
+      if(g_verboseCycle)
+         PrintFormat("REBAL(DRY) %s: cur %.2f -> target %.2f lots (notional %.0f)", sym, cur, target, notional);
+      return;
+   }
 
+   if(InBackoff(sym)) return;                      // recently failed (e.g. market closed) — wait
    CloseSymbol(sym);                               // flatten then re-open to the target (mode-agnostic)
    if(MathAbs(target) >= SymbolInfoDouble(sym, SYMBOL_VOLUME_MIN))
    {
-      if(target > 0) trade.Buy(MathAbs(target), sym);
-      else           trade.Sell(MathAbs(target), sym);
+      bool ok = (target > 0) ? trade.Buy(MathAbs(target), sym) : trade.Sell(MathAbs(target), sym);
+      uint rc = trade.ResultRetcode();
+      if(!ok || (rc != TRADE_RETCODE_DONE && rc != TRADE_RETCODE_PLACED))
+      {
+         NoteFail(sym);
+         PrintFormat("REBAL %s: order failed rc=%u — backing off %ds", sym, rc, BACKOFF_SECS);
+      }
    }
 }
 
@@ -214,7 +253,7 @@ void CloseOrphans(string &tsyms[])
       for(int j = 0; j < ArraySize(tsyms); j++) if(tsyms[j] == sym) { keep = true; break; }
       if(!keep)
       {
-         if(InpRebalanceDryRun) PrintFormat("REBAL(DRY) %s: orphan -> would close", sym);
+         if(InpRebalanceDryRun) { if(g_verboseCycle) PrintFormat("REBAL(DRY) %s: orphan -> would close", sym); }
          else trade.PositionClose(tk);
       }
    }
@@ -244,9 +283,10 @@ void ExportAccount()
       openN++; floating += PositionGetDouble(POSITION_PROFIT);
    }
    FileWriteString(f, StringFormat(
-      "{\"equity\":%.2f,\"balance\":%.2f,\"currency\":\"%s\",\"open\":%d,\"floating\":%.2f,\"ts\":%I64d}",
+      "{\"equity\":%.2f,\"balance\":%.2f,\"currency\":\"%s\",\"login\":%I64d,\"open\":%d,\"floating\":%.2f,\"ts\":%I64d}",
       AccountInfoDouble(ACCOUNT_EQUITY), AccountInfoDouble(ACCOUNT_BALANCE),
-      AccountInfoString(ACCOUNT_CURRENCY), openN, floating, (long)TimeGMT()));
+      AccountInfoString(ACCOUNT_CURRENCY), AccountInfoInteger(ACCOUNT_LOGIN),
+      openN, floating, (long)TimeGMT()));
    FileClose(f);
 }
 //+------------------------------------------------------------------+
